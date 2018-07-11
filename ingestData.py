@@ -126,19 +126,20 @@ with open(gameDataFile, 'r') as f:
         else:
             gameInfoDict[gameId] = currentData
 
-# ### Gather the top five percent of players for each season 
+### Gather the top five percent of players for each season 
 
-# # splits player_data into '17 and '18 season
-# firstSeasonPlayers = {}
-# secondSeasonPlayers = {}
-# with open(playerDataFile, 'r') as f:
-#     reader = csv.DictReader(f)
-#     reader = sorted(reader, key=operator.itemgetter(9), reverse=False)
-#     for row in reader:
-#         if row['Season'] == '2016-17' :
-#             firstSeasonPlayers.append(row)
-#         else:
-#             secondSeasonPlayers.append(row)
+# splits player_data into '17 and '18 season
+firstSeasonPlayerData = []
+secondSeasonPlayerData = []
+with open(playerDataFile, 'r') as f:
+    reader = csv.DictReader(f)
+    reader = sorted(reader, key=operator.itemgetter('Points'), reverse=False)
+    for row in reader:
+        if row['Season'] == '2016-17' :
+            firstSeasonPlayerData.append(row)
+        else:
+            secondSeasonPlayerData.append(row)
+
 
 ### ABOVE ARE DEFINITIONS, READING IN INITIAL DATA ###
 ### BELOW IS SETTING UP, TRAINING, AND TESTING THE MODEL ###
