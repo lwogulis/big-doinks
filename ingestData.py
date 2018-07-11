@@ -2,6 +2,7 @@ import csv
 from collections import defaultdict
 import datetime
 import numpy as np
+import operator
 from sklearn import datasets, linear_model
 # from sklearn.metrics import mean_squared_error, r2_score
 
@@ -25,6 +26,45 @@ def MAPE(predicted_responses, actual_responses):
         currTotal += np.absolute(float(numerator/denominator))
     return float(currTotal / n)
 
+def createMatrices(num_samples, num_variables, game_info_dict, viewers_per_game=None):
+    # Matrix initialization
+    data = np.zeros((num_samples, num_variables))
+    values = np.zeros((num_samples, 1))
+    dataShape = data.shape
+    print("Number of samples: {}".format(dataShape[0]))
+
+    data_point = 0
+    # For keeping track of test entries in the dictionary
+    # Not used in training
+    game_index_dict = {}
+
+    for gameId in game_info_dict:
+        game_index_dict[gameId] = data_point
+        game = game_info_dict[gameId]
+        gameInfoHome = game['H']
+        gameInfoAway = game['A']
+        teamIndexHome = teamsSorted.index(gameInfoHome['team'])
+        data[data_point][teamIndexHome] = 1
+        teamIndexAway = teamsSorted.index(gameInfoAway['team'])
+        data[data_point][teamIndexAway] = 1
+        data[data_point][homeWinIdx] = gameInfoHome['wins']
+        data[data_point][awayWinIdx] = gameInfoAway['wins']
+        data[data_point][homeLossIdx] = gameInfoHome['losses']
+        data[data_point][awayLossIdx] = gameInfoAway['losses']
+
+        if viewers_per_game:
+            values[data_point][0] = viewers_per_game[gameId]
+        data_point += 1
+
+    if data_point != dataShape[0]:
+        print("Unexpected number of data points found: {}".format(data_point))
+    
+    # For training, need validation matrix
+    if viewers_per_game:
+        return data_point, data, values
+    # For testing, need to be able to refer back to game storage
+    else:
+        return data_point, data, game_index_dict
 
 teams = set()
 # Number of samples (games) in training set
@@ -86,7 +126,19 @@ with open(gameDataFile, 'r') as f:
         else:
             gameInfoDict[gameId] = currentData
 
+# ### Gather the top five percent of players for each season 
 
+# # splits player_data into '17 and '18 season
+# firstSeasonPlayers = {}
+# secondSeasonPlayers = {}
+# with open(playerDataFile, 'r') as f:
+#     reader = csv.DictReader(f)
+#     reader = sorted(reader, key=operator.itemgetter(9), reverse=False)
+#     for row in reader:
+#         if row['Season'] == '2016-17' :
+#             firstSeasonPlayers.append(row)
+#         else:
+#             secondSeasonPlayers.append(row)
 
 ### ABOVE ARE DEFINITIONS, READING IN INITIAL DATA ###
 ### BELOW IS SETTING UP, TRAINING, AND TESTING THE MODEL ###
@@ -103,38 +155,14 @@ awayLossIdx = numTeams + 3
 
 ### TRAINING ###
 
-# Training matrices initialization
-trainingData = np.zeros((numDataPoints, numVariables))
-trainingShape = trainingData.shape
-print("Number of training samples: {}\nNumber of variables: {}".format(trainingShape[0],trainingShape[1]))
-trainingValues = np.zeros((numDataPoints, 1))
-
-dataPoint = 0
-
-for gameId in gameInfoDict:
-    game = gameInfoDict[gameId]
-    gameInfoHome = game['H']
-    gameInfoAway = game['A']
-    teamIndexHome = teamsSorted.index(gameInfoHome['team'])
-    trainingData[dataPoint][teamIndexHome] = 1
-    teamIndexAway = teamsSorted.index(gameInfoAway['team'])
-    trainingData[dataPoint][teamIndexAway] = 1
-    trainingData[dataPoint][homeWinIdx] = gameInfoHome['wins']
-    trainingData[dataPoint][awayWinIdx] = gameInfoAway['wins']
-    trainingData[dataPoint][homeLossIdx] = gameInfoHome['losses']
-    trainingData[dataPoint][awayLossIdx] = gameInfoAway['losses']
-    trainingValues[dataPoint][0] = viewersPerGame[gameId]
-    dataPoint += 1
-
-if dataPoint != trainingShape[0]:
-    print("Number of data points found: {}".format(dataPoint))
+print("Collecting training data")
+numTrainingSamples, trainingData, trainingValues = createMatrices(numDataPoints, numVariables, gameInfoDict, viewersPerGame)
 
 # Runs the regression
 ourModel = linear_model.LinearRegression()
 ourModel.fit(trainingData, trainingValues)
 
-# Compares the trained scores on the original set to their actual values
-# Using r^2, not MAPE
+# Compares the trained scores on the original set to their actual values using r^2
 print("Score on training set: {}".format(ourModel.score(trainingData, trainingValues)))
 
 resultsOnTrainingSet = ourModel.predict(trainingData)
@@ -142,52 +170,25 @@ print("MAPE on training set: {}".format(MAPE(resultsOnTrainingSet.flatten().toli
 
 
 ### TESTING ###
-# I know this is super ugly and duplicative but we only have two
-# files/sets and there were too many moving parts, not enough time
 
-# Test matrices initialization
-testData = np.zeros((numTestDataPoints, numVariables))
-testShape = testData.shape
-print("Number of test samples: {}".format(testShape[0]))
+print("Collecting testing data")
+numTestSamples, testData, testGameIdxDict = createMatrices(numTestDataPoints, numVariables, testGameInfoDict)
 
-dataPoint = 0
-# For keeping track of test entries in the dictionary
-testGameIdxDict = {}
-
-for gameId in testGameInfoDict:
-    testGameIdxDict[gameId] = dataPoint
-    game = testGameInfoDict[gameId]
-    gameInfoHome = game['H']
-    gameInfoAway = game['A']
-    teamIndexHome = teamsSorted.index(gameInfoHome['team'])
-    testData[dataPoint][teamIndexHome] = 1
-    teamIndexAway = teamsSorted.index(gameInfoAway['team'])
-    testData[dataPoint][teamIndexAway] = 1
-    testData[dataPoint][homeWinIdx] = gameInfoHome['wins']
-    testData[dataPoint][awayWinIdx] = gameInfoAway['wins']
-    testData[dataPoint][homeLossIdx] = gameInfoHome['losses']
-    testData[dataPoint][awayLossIdx] = gameInfoAway['losses']
-    dataPoint += 1
-
-if dataPoint != testShape[0]:
-    print("Number of data points found: {}".format(dataPoint))
-
-
+# Predict viewership
 resultsOnTestSet = ourModel.predict(testData)
 
+# Write prediction results to a file
 with open(testFile, 'r') as testF:
     reader = csv.DictReader(testF)
     headers = reader.fieldnames
     with open(outFile, 'w') as outF:
         writer = csv.DictWriter(outF,fieldnames=headers)
         writer.writeheader()
-        dataPoint = 0
         for line in reader:
             gameId = line['Game_ID']
             gameIdx = testGameIdxDict[gameId]
-            line['Total_Viewers'] = resultsOnTestSet[dataPoint][0]
+            line['Total_Viewers'] = int(resultsOnTestSet[gameIdx][0])
             writer.writerow(line)
-            dataPoint += 1
 
 
 
