@@ -4,15 +4,18 @@ import datetime
 import numpy as np
 import operator
 from sklearn import datasets, linear_model
-# from sklearn.metrics import mean_squared_error, r2_score
 
-dataPath = "./BusinessAnalytics/"
+analyticsDataPath = "./BusinessAnalyticsData/"
+scrapedDataPath = "./ScrapedData/"
 
-gameDataFile = dataPath + "game_data.csv"
-playerDataFile = dataPath + "player_data.csv"
-trainingFile = dataPath + "training_set.csv"
-testFile = dataPath + "test_set.csv"
+gameDataFile = analyticsDataPath + "game_data.csv"
+playerDataFile = analyticsDataPath + "player_data.csv"
+trainingFile = analyticsDataPath + "training_set.csv"
+testFile = analyticsDataPath + "test_set.csv"
 outFile = "predicted_viewership.csv"
+national201617File = scrapedDataPath + "2016-2017_nba_nat_tv.txt"
+national201718File = scrapedDataPath + "2017-2018_nba_nat_tv.txt"
+
 
 # Formula we're graded on, from the pdf
 def MAPE(predicted_responses, actual_responses):
@@ -51,6 +54,11 @@ def createMatrices(num_samples, num_variables, game_info_dict, viewers_per_game=
         data[data_point][awayWinIdx] = gameInfoAway['wins']
         data[data_point][homeLossIdx] = gameInfoHome['losses']
         data[data_point][awayLossIdx] = gameInfoAway['losses']
+        data[data_point][winDifferentialIdx] = game['differential']
+        data[data_point][espnNationalIdx] = game['espn']
+        data[data_point][abcNationalIdx] = game['abc']
+        data[data_point][tntNationalIdx] = game['tnt']
+        data[data_point][nbatvNationalIdx] = game['nbatv']
 
         if viewers_per_game:
             values[data_point][0] = viewers_per_game[gameId]
@@ -65,6 +73,118 @@ def createMatrices(num_samples, num_variables, game_info_dict, viewers_per_game=
     # For testing, need to be able to refer back to game storage
     else:
         return data_point, data, game_index_dict
+
+### MICHAEL DETERMINE IF NATIONAL TV GAME ###
+
+monthsofFirstHalf = {'September' : 9, 'October' : 10, 'November' : 11, 'December' : 12 }
+monthsofSecondHalf = {'January' : 1, 'February' : 2, 'March' : 3, 'April' : 4}
+teamCodes = {'Knicks' : 'NYK',  'Cavaliers' : 'CLE', 'Spurs' : 'SAS', 'Warriors' : 'GSW', 'Thunder' : 'OKC', 'Sixers': 'PHI', 'Rockets' : 'HOU', 'Lakers' : 'LAL', 'Celtics' : 'BOS', 'Bulls' : 'CHI', 'Clippers' : 'LAC', 'Blazers': 'POR', 'Raptors' : 'TOR', 'Mavericks' : 'DAL',  'Nets' : 'BKN', 'Heat' : 'MIA', 'Kings' : 'SAC', 'Grizzlies' : 'MEM', "T'Wolves" : 'MIN', 'Jazz' : 'UTA', 'Pelicans' : 'NOR', 'Hornets' : 'CHA', 'Bucks' : 'MIL', 'Nuggets' : 'DEN', 'Hawks' : 'ATL', 'Wizards' : 'WAS', 'Pacers' : 'IND', 'Pistons' : 'DET', 'Magic' : 'ORL', 'Suns' : 'PHX', 'Orlando': 'ORL', 'Cavs' : 'CLE'}
+christmas = '12/25/2016'
+openingday = '10/25/2016'
+christmas2017 = '12/25/2017'
+openingday2017 = '10/17/2017'
+networks = ['espn', 'abc', 'tnt', 'nbatv']
+
+nat_tv_schedule = {}
+with open(national201617File, 'r') as f:
+    day = None
+    month = None
+    date = None
+    full_date = None
+    for line in f:
+        line_arr = line.split()
+        if line[0].isalpha():
+            day = line_arr[0].strip(',')
+            month = line_arr[1]
+            date = line_arr[2]
+            if month in monthsofFirstHalf:
+                full_date = str(monthsofFirstHalf[month]) + '/'  + date + '/' + '2016'
+            else:
+                full_date = str(monthsofSecondHalf[month]) + '/' + date + '/' + '2017'
+                isOpeningDay = False
+        else:
+            isESPN = 0
+            isNBATV = 0
+            isABC = 0
+            isTNT = 0
+            teams = line_arr[2].split('/')
+            teams.sort()
+            key0 = full_date + '_' + teamCodes[teams[0]]
+            key1 = full_date + '_' + teamCodes[teams[1]]
+            network = line_arr[-1]
+            if network == 'ESPN':
+                isESPN = 1
+            elif network == 'ABC':
+                isABC = 1
+            elif network == 'TNT':
+                isTNT = 1
+            elif network == 'TV':
+                isNBATV = 1
+            retRow = [isESPN, isABC, isTNT, isNBATV]
+            nat_tv_schedule[key0] = retRow
+            nat_tv_schedule[key1] = retRow
+
+with open(national201718File, 'r') as f:
+    day = None
+    month = None
+    date = None
+    full_date = None
+    nextLine = False
+    saveKey = None
+    for line in f:
+        line_arr = line.split()
+        if line[0].isalpha() and line_arr[0] != 'Only':
+            day = line_arr[0].strip(',')
+            month = line_arr[1]
+            date = line_arr[2]
+            if month in monthsofFirstHalf:
+                full_date = str(monthsofFirstHalf[month]) + '/' + date + '/' + '2017'
+            else:
+                full_date = str(monthsofSecondHalf[month]) + '/' + date + '/' + '2018'
+        else:
+            isESPN = 0
+            isNBATV = 0
+            isABC = 0
+            isTNT = 0
+            if not nextLine:
+                teams = line_arr[2].split('-')
+                teams.sort()
+                key0 = full_date + '_' + teamCodes[teams[0]] 
+                key1 = full_date + '_' + teamCodes[teams[1]]
+                network = line_arr[-1]
+                if network == 'ESPN':
+                    isESPN = 1
+                elif network == 'ABC':
+                    isABC = 1
+                elif network == 'TNT':
+                    isTNT = 1
+                elif network == 'TV':
+                    isNBATV = 1
+                else:
+                    nextLine = True
+                    saveKey0 = key0
+                    saveKey1 = key1
+                retRow = [isESPN, isABC, isTNT, isNBATV]
+                nat_tv_schedule[key0] = retRow
+                nat_tv_schedule[key1] = retRow
+            else:
+                nextLine = False
+                network = line_arr[-1]
+                if network == 'ESPN':
+                    isESPN = 1
+                elif network == 'ABC':
+                    isABC = 1
+                elif network == 'TNT':
+                    isTNT = 1
+                elif network == 'TV':
+                    isNBATV = 1
+                
+                retRow = [isESPN, isABC, isTNT, isNBATV]
+                nat_tv_schedule[saveKey0] = retRow
+                nat_tv_schedule[saveKey1] = retRow
+
+### END OF MICHAEL NATIONAL GAME ###
+
 
 teams = set()
 # Number of samples (games) in training set
@@ -95,31 +215,50 @@ gameInfoDict = {}
 testGameInfoDict = {}
 with open(gameDataFile, 'r') as f:
     reader = csv.DictReader(f)
+    i = 0
     for row in reader:
-        teams.add(row['Team'])
+        team = row['Team']
+        teams.add(team)
         gameId = row['Game_ID']
+        date = row['Game_Date']
+        key = date + '_' + team
+        nat_tv_info = [0,0,0,0]
+        # print(key)
+        if key in nat_tv_schedule:
+            nat_tv_info = nat_tv_schedule[key]
 
         # Only gathering training currently
         if gameId in testSetGameIds:
             if gameId in testGameInfoDict:
                 currentData = testGameInfoDict[gameId]
+                currentData['differential'] = abs(team1wins - int(row['Wins_Entering_Gm']))
             else:
                 currentData = {}
+                team1wins = int(row['Wins_Entering_Gm'])
                 numTestDataPoints += 1
         else:
             if gameId in gameInfoDict:
                 currentData = gameInfoDict[gameId]
+                currentData['differential'] = abs(team1wins - int(row['Wins_Entering_Gm']))
             else:
                 currentData = {}
+                team1wins = int(row['Wins_Entering_Gm'])
                 numDataPoints += 1
         
         # loc can be 'H' or 'A'
         loc = row['Location']
         currentData[loc] = {}
 
-        currentData[loc]['wins'] = int(row['Wins_Entering_Gm'])
-        currentData[loc]['losses'] = int(row['Losses_Entering_Gm'])
+        winsEntering = int(row['Wins_Entering_Gm'])
+        lossesEntering = int(row['Losses_Entering_Gm'])
+        currentData[loc]['wins'] = winsEntering
+        currentData[loc]['losses'] = lossesEntering
         currentData[loc]['team'] = row['Team']
+
+        i = 0
+        for network in networks:
+            currentData[network] = nat_tv_info[i]
+            i += 1
 
         if gameId in testSetGameIds:
             testGameInfoDict[gameId] = currentData
@@ -147,11 +286,18 @@ with open(playerDataFile, 'r') as f:
 teamsSorted = sorted(list(teams))
 numTeams = len(teams)
 # Column plan: sorted teams for binary 1/0, followed by home team win, home team loss, away team win, away team loss
-numVariables = numTeams + 4 
+numVariables = numTeams + 9
 homeWinIdx = numTeams
 awayWinIdx = numTeams + 1
 homeLossIdx = numTeams + 2
 awayLossIdx = numTeams + 3
+winDifferentialIdx = numTeams + 4
+espnNationalIdx = numTeams + 5
+abcNationalIdx = numTeams + 6
+tntNationalIdx = numTeams + 7
+nbatvNationalIdx = numTeams + 8
+
+
 
 
 ### TRAINING ###
