@@ -3,8 +3,7 @@ from collections import defaultdict
 import datetime
 import numpy as np
 import operator
-from sklearn import datasets, linear_model, neural_network
-# from sklearn.neural_network import MLPClassifier
+from sklearn import datasets, linear_model
 
 analyticsDataPath = "./BusinessAnalyticsData/"
 scrapedDataPath = "./ScrapedData/"
@@ -35,7 +34,6 @@ def createMatrices(num_samples, num_variables, game_info_dict, viewers_per_game=
     data = np.zeros((num_samples, num_variables))
     values = np.zeros((num_samples, 1))
     dataShape = data.shape
-    print("Number of samples: {}".format(dataShape[0]))
 
     data_point = 0
     # For keeping track of test entries in the dictionary
@@ -60,9 +58,8 @@ def createMatrices(num_samples, num_variables, game_info_dict, viewers_per_game=
         data[data_point][abcNationalIdx] = game['abc']
         data[data_point][tntNationalIdx] = game['tnt']
         data[data_point][nbatvNationalIdx] = game['nbatv']
-        data[data_point][nbatvNationalIdx + game['weekday']] = 1
 
-        if viewers_per_game:
+        if viewers_per_game and gameId in viewers_per_game:
             values[data_point][0] = viewers_per_game[gameId]
         data_point += 1
 
@@ -204,15 +201,19 @@ with open(testFile, 'r') as f:
 # Maps game ID to the total number of viewers across all countries
 # To improve, try for each country independently (is there enough data
 # for that to be useful?)
-viewersPerGame = defaultdict(int)    
+viewersPerGame = defaultdict(int)
+viewersPerCountryPerGame = defaultdict(dict)
 with open (trainingFile, 'r') as f:
     reader = csv.DictReader(f)
     for row in reader:
-        gameId = row['Game_ID']            
-        viewersPerGame[gameId] += int(row['Rounded Viewers'])
+        gameId = row['Game_ID']
+        countryId = row['Country']
+        numViewers = int(row['Rounded Viewers'])
+        viewersPerGame[gameId] += numViewers
+        viewersPerCountryPerGame[countryId][gameId] = numViewers
 
 # Dictionary of information for each game
-# {gameID: {'H':{homeTeamInfo}, 'A':{awayTeamInfo}, 'differential':int(gameWinDiff), 'abc':0/1, etc, 'weekday':0-6}}
+# {gameID: {'H':{homeTeamInfo}, 'A':{awayTeamInfo}}}
 gameInfoDict = {}
 testGameInfoDict = {}
 with open(gameDataFile, 'r') as f:
@@ -223,9 +224,6 @@ with open(gameDataFile, 'r') as f:
         teams.add(team)
         gameId = row['Game_ID']
         date = row['Game_Date']
-        month, day, year = date.split('/')
-        currDatetime = datetime.datetime(int(year), int(month), int(day))
-        weekday = currDatetime.weekday()
         key = date + '_' + team
         nat_tv_info = [0,0,0,0]
         # print(key)
@@ -259,7 +257,6 @@ with open(gameDataFile, 'r') as f:
         currentData[loc]['wins'] = winsEntering
         currentData[loc]['losses'] = lossesEntering
         currentData[loc]['team'] = row['Team']
-        currentData['weekday'] = weekday
 
         i = 0
         for network in networks:
@@ -286,15 +283,17 @@ with open(playerDataFile, 'r') as f:
             secondSeasonPlayerData.append(row)
 
 
+
+### Separate regression by country
+
+
 ### ABOVE ARE DEFINITIONS, READING IN INITIAL DATA ###
 ### BELOW IS SETTING UP, TRAINING, AND TESTING THE MODEL ###
 
 teamsSorted = sorted(list(teams))
 numTeams = len(teams)
-# Column plan: sorted teams for binary 1/0, followed by home team win, home team loss, away team win, away team loss, 
-# win differential, national tv airings, weekday (0-6)
-# weekday treated categorically
-numVariables = numTeams + 9 + 7
+# Column plan: sorted teams for binary 1/0, followed by home team win, home team loss, away team win, away team loss
+numVariables = numTeams + 9
 homeWinIdx = numTeams
 awayWinIdx = numTeams + 1
 homeLossIdx = numTeams + 2
@@ -310,25 +309,29 @@ nbatvNationalIdx = numTeams + 8
 
 ### TRAINING ###
 
-print("Collecting training data\n")
+
+print("Collecting training data")
+cumulativeViewers = np.zeros((numDataPoints, 1))
+for country in sorted(viewersPerCountryPerGame.keys()):
+    currentViewersPerGame = viewersPerCountryPerGame[country]
+    numTrainingSamples, trainingData, trainingValues = createMatrices(numDataPoints, numVariables, gameInfoDict, currentViewersPerGame)
+
+    # Runs the regression
+    ourModel = linear_model.LinearRegression()
+    ourModel.fit(trainingData, trainingValues)
+
+    resultsOnTrainingSet = ourModel.predict(trainingData)
+    for i in range(len(cumulativeViewers)):
+        cumulativeViewers[i] += resultsOnTrainingSet[i]
+
+# Obtaining matrix of cumulative viewership, for comparison
 numTrainingSamples, trainingData, trainingValues = createMatrices(numDataPoints, numVariables, gameInfoDict, viewersPerGame)
 
-# Runs the regression
-print("Linear Regression\n")
-ourModelLinear = linear_model.LinearRegression()
-ourModelLinear.fit(trainingData, trainingValues)
 
 # Compares the trained scores on the original set to their actual values using r^2
-print("Score on training set: {}".format(ourModelLinear.score(trainingData, trainingValues)))
+# print("Score on training set: {}".format(ourModel.score(cumulativeViewers, trainingValues)))
+print("MAPE on training set: {}".format(MAPE(cumulativeViewers.flatten().tolist(), trainingValues.flatten().tolist())))
 
-resultsOnTrainingSet = ourModelLinear.predict(trainingData)
-print("MAPE on training set: {}".format(MAPE(resultsOnTrainingSet.flatten().tolist(), trainingValues.flatten().tolist())))
-
-# print("\nNeural Network\n")
-# ourModelNN = neural_network.MLPRegressor(hidden_layer_sizes=(numVariables, numVariables), max_iter=500)
-# ourModelNN.fit(trainingData, trainingValues)
-# resultsOnTrainingSet = ourModelNN.predict(trainingData)
-# print("MAPE on training set: {}".format(MAPE(resultsOnTrainingSet.flatten().tolist(), trainingValues.flatten().tolist())))
 
 ### TESTING ###
 
