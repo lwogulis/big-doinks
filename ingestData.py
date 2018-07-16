@@ -60,6 +60,7 @@ def createMatrices(num_samples, num_variables, game_info_dict, viewers_per_game=
         data[data_point][abcNationalIdx] = game['abc']
         data[data_point][tntNationalIdx] = game['tnt']
         data[data_point][nbatvNationalIdx] = game['nbatv']
+        data[data_point][dateInSeasonIdx] = game['date-season']
         data[data_point][nbatvNationalIdx + game['weekday']] = 1
 
         if viewers_per_game:
@@ -217,7 +218,8 @@ gameInfoDict = {}
 testGameInfoDict = {}
 with open(gameDataFile, 'r') as f:
     reader = csv.DictReader(f)
-    i = 0
+    date16 = datetime.datetime(2016, 10, 25)
+    date17 = datetime.datetime(2017, 10, 17)
     for row in reader:
         team = row['Team']
         teams.add(team)
@@ -226,6 +228,15 @@ with open(gameDataFile, 'r') as f:
         month, day, year = date.split('/')
         currDatetime = datetime.datetime(int(year), int(month), int(day))
         weekday = currDatetime.weekday()
+        season = row['Season']
+        if season == '2016-17':
+            timeDelta = (currDatetime - date16).days
+            date16 = currDatetime
+        elif season == '2017-18':
+            timeDelta = (currDatetime - date17).days
+            date17 = currDatetime
+        else:
+            print("WARNING: season {} incorrectly formatted".format(season))
         key = date + '_' + team
         nat_tv_info = [0,0,0,0]
         # print(key)
@@ -260,6 +271,7 @@ with open(gameDataFile, 'r') as f:
         currentData[loc]['losses'] = lossesEntering
         currentData[loc]['team'] = row['Team']
         currentData['weekday'] = weekday
+        currentData['date-season'] = timeDelta
 
         i = 0
         for network in networks:
@@ -294,7 +306,7 @@ numTeams = len(teams)
 # Column plan: sorted teams for binary 1/0, followed by home team win, home team loss, away team win, away team loss, 
 # win differential, national tv airings, weekday (0-6)
 # weekday treated categorically
-numVariables = numTeams + 9 + 7
+numVariables = numTeams + 10 + 7
 homeWinIdx = numTeams
 awayWinIdx = numTeams + 1
 homeLossIdx = numTeams + 2
@@ -304,6 +316,7 @@ espnNationalIdx = numTeams + 5
 abcNationalIdx = numTeams + 6
 tntNationalIdx = numTeams + 7
 nbatvNationalIdx = numTeams + 8
+dateInSeasonIdx = numTeams + 9
 
 
 
@@ -324,6 +337,7 @@ print("Score on training set: {}".format(ourModelLinear.score(trainingData, trai
 resultsOnTrainingSet = ourModelLinear.predict(trainingData)
 print("MAPE on training set: {}".format(MAPE(resultsOnTrainingSet.flatten().tolist(), trainingValues.flatten().tolist())))
 
+### NEURAL NETWORK NOT WORKING, WONT IMPORT ###
 # print("\nNeural Network\n")
 # ourModelNN = neural_network.MLPRegressor(hidden_layer_sizes=(numVariables, numVariables), max_iter=500)
 # ourModelNN.fit(trainingData, trainingValues)
@@ -336,7 +350,7 @@ print("Collecting testing data")
 numTestSamples, testData, testGameIdxDict = createMatrices(numTestDataPoints, numVariables, testGameInfoDict)
 
 # Predict viewership
-resultsOnTestSet = ourModel.predict(testData)
+resultsOnTestSet = ourModelLinear.predict(testData)
 
 # Write prediction results to a file
 with open(testFile, 'r') as testF:
