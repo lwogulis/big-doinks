@@ -4,6 +4,8 @@ import datetime
 import numpy as np
 import operator
 from sklearn import datasets, linear_model, neural_network
+# import keras
+# from keras.models import Sequential
 # from sklearn.neural_network import MLPClassifier
 
 analyticsDataPath = "./BusinessAnalyticsData/"
@@ -272,6 +274,8 @@ with open(gameDataFile, 'r') as f:
         currentData[loc]['team'] = row['Team']
         currentData['weekday'] = weekday
         currentData['date-season'] = timeDelta
+        # currently not used, but might be useful
+        currentData['season'] = season
 
         i = 0
         for network in networks:
@@ -338,11 +342,24 @@ resultsOnTrainingSet = ourModelLinear.predict(trainingData)
 print("MAPE on training set: {}".format(MAPE(resultsOnTrainingSet.flatten().tolist(), trainingValues.flatten().tolist())))
 
 ### NEURAL NETWORK NOT WORKING, WONT IMPORT ###
-# print("\nNeural Network\n")
-# ourModelNN = neural_network.MLPRegressor(hidden_layer_sizes=(numVariables, numVariables), max_iter=500)
-# ourModelNN.fit(trainingData, trainingValues)
-# resultsOnTrainingSet = ourModelNN.predict(trainingData)
+print("\nNeural Network with scikit-learn\n")
+ourModelNN = neural_network.MLPRegressor(hidden_layer_sizes=(20, 100), max_iter=500)
+ourModelNN.fit(trainingData, trainingValues.flatten())
+resultsOnTrainingSet = ourModelNN.predict(trainingData)
+print("MAPE on training set: {}".format(MAPE(resultsOnTrainingSet.flatten().tolist(), trainingValues.flatten().tolist())))
+
+
+# print("\nNeural Network with keras\n")
+# model = Sequential()
+# model.add(Dense(900, input_dim=65, activation='relu'))
+# model.add(Dense(25, activation='relu'))
+# model.add(Dense(25, activation='relu'))
+# model.add(Dense(1, activation='sigmoid'))
+# model.compile(loss='mse', optimizer=keras.optimizers.RMSprop(lr=0.001))
+# model.fit(trainingData, trainingValues, epochs=1500, batch_size=100, validation_split=0.1)
+# resultsOnTrainingSet = model.predict(trainingData)
 # print("MAPE on training set: {}".format(MAPE(resultsOnTrainingSet.flatten().tolist(), trainingValues.flatten().tolist())))
+
 
 ### TESTING ###
 
@@ -350,7 +367,7 @@ print("Collecting testing data")
 numTestSamples, testData, testGameIdxDict = createMatrices(numTestDataPoints, numVariables, testGameInfoDict)
 
 # Predict viewership
-resultsOnTestSet = ourModelLinear.predict(testData)
+resultsOnTestSet = ourModelNN.predict(testData)
 
 # Write prediction results to a file
 with open(testFile, 'r') as testF:
@@ -362,7 +379,7 @@ with open(testFile, 'r') as testF:
         for line in reader:
             gameId = line['Game_ID']
             gameIdx = testGameIdxDict[gameId]
-            line['Total_Viewers'] = int(resultsOnTestSet[gameIdx][0])
+            line['Total_Viewers'] = int(resultsOnTestSet[gameIdx])
             writer.writerow(line)
 
 
