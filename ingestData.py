@@ -1,12 +1,12 @@
+#!/usr/bin/env python3
+
 import csv
 from collections import defaultdict
 import datetime
 import numpy as np
 import operator
 from sklearn import datasets, linear_model, neural_network
-# import keras
-# from keras.models import Sequential
-# from sklearn.neural_network import MLPClassifier
+from sklearn.neural_network import MLPClassifier
 
 analyticsDataPath = "./BusinessAnalyticsData/"
 scrapedDataPath = "./ScrapedData/"
@@ -44,6 +44,31 @@ def createMatrices(num_samples, num_variables, game_info_dict, viewers_per_game=
     # Not used in training
     game_index_dict = {}
 
+    # Normalize the data
+    maxWins = 0
+    maxLosses = 0
+    maxDifferential = 0
+    maxDate = 0
+    max_viewers = 0
+    for gameId in game_info_dict:
+        gameInfo = game_info_dict[gameId]
+        homeInfo = gameInfo['H']
+        awayInfo = gameInfo['A']
+        currWins = np.max([homeInfo['wins'], awayInfo['wins']])
+        currLosses = np.max([homeInfo['losses'], awayInfo['losses']])
+        currDifferential = gameInfo['differential']
+        currDate = gameInfo['date-season']
+        # print("Current date: {}".format(currDate))
+        if currWins > maxWins:
+            maxWins = currWins
+        if currLosses > maxLosses:
+            maxLosses = currLosses
+        if currDifferential > maxDifferential:
+            maxDifferential = currDifferential
+        if currDate > maxDate:
+            maxDate = currDate
+
+
     for gameId in game_info_dict:
         game_index_dict[gameId] = data_point
         game = game_info_dict[gameId]
@@ -53,16 +78,16 @@ def createMatrices(num_samples, num_variables, game_info_dict, viewers_per_game=
         data[data_point][teamIndexHome] = 1
         teamIndexAway = teamsSorted.index(gameInfoAway['team'])
         data[data_point][teamIndexAway] = 1
-        data[data_point][homeWinIdx] = gameInfoHome['wins']
-        data[data_point][awayWinIdx] = gameInfoAway['wins']
-        data[data_point][homeLossIdx] = gameInfoHome['losses']
-        data[data_point][awayLossIdx] = gameInfoAway['losses']
-        data[data_point][winDifferentialIdx] = game['differential']
+        data[data_point][homeWinIdx] = gameInfoHome['wins'] / maxWins
+        data[data_point][awayWinIdx] = gameInfoAway['wins'] / maxWins
+        data[data_point][homeLossIdx] = gameInfoHome['losses'] / maxLosses
+        data[data_point][awayLossIdx] = gameInfoAway['losses'] / maxLosses
+        data[data_point][winDifferentialIdx] = game['differential'] / maxDifferential
         data[data_point][espnNationalIdx] = game['espn']
         data[data_point][abcNationalIdx] = game['abc']
         data[data_point][tntNationalIdx] = game['tnt']
         data[data_point][nbatvNationalIdx] = game['nbatv']
-        data[data_point][dateInSeasonIdx] = game['date-season']
+        data[data_point][dateInSeasonIdx] = game['date-season'] / maxDate
         data[data_point][nbatvNationalIdx + game['weekday']] = 1
 
         if viewers_per_game:
@@ -79,7 +104,7 @@ def createMatrices(num_samples, num_variables, game_info_dict, viewers_per_game=
     else:
         return data_point, data, game_index_dict
 
-### MICHAEL DETERMINE IF NATIONAL TV GAME ###
+### DETERMINE IF NATIONAL TV GAME ###
 
 monthsofFirstHalf = {'September' : 9, 'October' : 10, 'November' : 11, 'December' : 12 }
 monthsofSecondHalf = {'January' : 1, 'February' : 2, 'March' : 3, 'April' : 4}
@@ -188,8 +213,6 @@ with open(national201718File, 'r') as f:
                 nat_tv_schedule[saveKey0] = retRow
                 nat_tv_schedule[saveKey1] = retRow
 
-### END OF MICHAEL NATIONAL GAME ###
-
 
 teams = set()
 # Number of samples (games) in training set
@@ -233,15 +256,12 @@ with open(gameDataFile, 'r') as f:
         season = row['Season']
         if season == '2016-17':
             timeDelta = (currDatetime - date16).days
-            date16 = currDatetime
         elif season == '2017-18':
             timeDelta = (currDatetime - date17).days
-            date17 = currDatetime
         else:
             print("WARNING: season {} incorrectly formatted".format(season))
         key = date + '_' + team
         nat_tv_info = [0,0,0,0]
-        # print(key)
         if key in nat_tv_schedule:
             nat_tv_info = nat_tv_schedule[key]
 
@@ -341,25 +361,13 @@ print("Score on training set: {}".format(ourModelLinear.score(trainingData, trai
 resultsOnTrainingSet = ourModelLinear.predict(trainingData)
 print("MAPE on training set: {}".format(MAPE(resultsOnTrainingSet.flatten().tolist(), trainingValues.flatten().tolist())))
 
-### NEURAL NETWORK NOT WORKING, WONT IMPORT ###
-print("\nNeural Network with scikit-learn\n")
-ourModelNN = neural_network.MLPRegressor(hidden_layer_sizes=(20, 100), max_iter=500)
+
+print("\nNeural Network with scikit-learn")
+ourModelNN = neural_network.MLPRegressor(hidden_layer_sizes=(100, 100, 100), max_iter=500)
 ourModelNN.fit(trainingData, trainingValues.flatten())
 resultsOnTrainingSet = ourModelNN.predict(trainingData)
-print("MAPE on training set: {}".format(MAPE(resultsOnTrainingSet.flatten().tolist(), trainingValues.flatten().tolist())))
-
-
-# print("\nNeural Network with keras\n")
-# model = Sequential()
-# model.add(Dense(900, input_dim=65, activation='relu'))
-# model.add(Dense(25, activation='relu'))
-# model.add(Dense(25, activation='relu'))
-# model.add(Dense(1, activation='sigmoid'))
-# model.compile(loss='mse', optimizer=keras.optimizers.RMSprop(lr=0.001))
-# model.fit(trainingData, trainingValues, epochs=1500, batch_size=100, validation_split=0.1)
-# resultsOnTrainingSet = model.predict(trainingData)
-# print("MAPE on training set: {}".format(MAPE(resultsOnTrainingSet.flatten().tolist(), trainingValues.flatten().tolist())))
-
+currMAPE = MAPE(resultsOnTrainingSet.flatten().tolist(), trainingValues.flatten().tolist())
+print("MAPE on training set: {}".format(currMAPE))
 
 ### TESTING ###
 
@@ -381,59 +389,3 @@ with open(testFile, 'r') as testF:
             gameIdx = testGameIdxDict[gameId]
             line['Total_Viewers'] = int(resultsOnTestSet[gameIdx])
             writer.writerow(line)
-
-
-
-
-
-# to be printed to file
-
-# This is where we should add new features (wut about win % instead of two features?)
-# Also an option! This was just the most direct option
-# I think we should also so differential between the two teams
-# Less viewership if its warriors vs suns
-# Let me know if you have questions, I think the rest is self explanatory? hard to tell since i wrote it ahha
-# Also youre totally right, percentage makes way more sense, except... 
-# well, idk, how do we account for that the earlier games will be so spread out, like 0 or 100% in the beginning isnt accurate
-# maybe literally add date (in a sortable format, which i dont think it is right now)
-# yes
-# okay
-# yeah maybe percentage doesn't matter, just totals and difference
-# i honestly am not positive either way, so lets try all the options and whatever has a better MAPE on the training set wins?
-# is sam getting on tonight?
-# I want to go get sushi
-# not sure how those are related
-# but i think yes
-# ah its so easy
-# fine ill do it
-# I will try to use lineup data/google trends though for a feature
-# cool! yeah feel free to do that then, maybe it makes more sense for me to continue with all of the more basic stuff since i started it
-#although i'm happy to brainstorm more features. I'm gonna go get sushi first though
-# gotcha, sounds good
-
-# # player stuff, not worrying about this yet
-# maxScore = defaultdict(int)
-# with open(playerDataFile, 'r') as f:
-#     reader = csv.DictReader(f)
-#     for row in reader:
-#         player = row['Person_ID']
-#         if row['Active_Status']:
-#             if row['Points'] > maxScore[player]:
-#                 maxScore[player] = row['Points']
-
-
-
-# # ROUGH SKETCH!
-# gameId: {
-#     homeTeamWins: int`home_wins_entering`,
-#     awayTeamWins: int`away_wins_entering`,
-#     homeTeamLosses: int`whatever`,
-#     awayTeamLosses: int`you get it`,
-#     CLE: 0/1
-#     NYK: 0/1
-#     POR: 0/1 #a bool value for all thirty-something teams in one game vector thing? | fair
-# #    etc. with binary representing whether or not that team plays the game
-# # yeah except not a boolian, literally the number 0 or the number 1
-# # that's generally how you treat categorical data with this kind of ml
-# # either it belongs in the category or it doesnt
-# }
